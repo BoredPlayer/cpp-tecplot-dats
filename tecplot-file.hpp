@@ -9,6 +9,8 @@
 
 #include "tecplot-zone.hpp"
 
+#define __DEBUG_TECPLOT_FILE__ false
+
 enum{
     __TITLE__,
     __VARIABLES_INIT__,
@@ -26,6 +28,8 @@ class tecplot_file{
         void loadFile();
         void setName(std::string name);
         void setTitle(std::string title);
+        std::vector<double> getNode(size_t node);
+        std::vector<double> getNode(size_t node, std::vector<size_t> columns);
         std::vector<double> getNode(size_t zoneID, size_t node);
         std::vector<double> getNode(size_t zoneID, size_t node, std::vector<size_t> columns);
         tecplot_zone getZone(size_t zoneID);
@@ -35,8 +39,8 @@ class tecplot_file{
         tecplot_zone firstZone();
         tecplot_zone lastZone();
         void setCoordColumns(std::vector<size_t> columns);
-        std::vector<double> findNodeCoords(std::vector<double> coords, double epsilon);
-        size_t findNode(std::vector<double> coords, double epsilon);
+        std::vector<double> findNodeCoords(std::vector<double> coords, double epsilon=1e-6);
+        size_t findNode(std::vector<double> coords, double epsilon=1e-6);
     private:
         void addVariable(std::string variable_name);
         char decodeDataType(std::string line);

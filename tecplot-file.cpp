@@ -63,44 +63,59 @@ char tecplot_file::decodeDataType(std::string line){
 }
 
 void tecplot_file::unpack_header(tecplot_zone* zone, std::string line){
+    #if(__DEBUG_TECPLOT_FILE__)
     std::cout<<"Unpacking header line: "<<line<<std::endl;
+    #endif
     size_t cursor = 0;
     double dtarget = 0.;
     size_t starget = 0;
     if(!(*zone).isInitialised()){
         cursor = line.find("=");
+        #if(__DEBUG_TECPLOT_FILE__)
         std::cout<<"Initialising new zone"<<std::endl;
-        (*zone) = tecplot_zone(line.substr(cursor+1), this->variables.size());
+        #endif
+        (*zone) = tecplot_zone(line.substr(cursor+1), this->variables.size(), 0);
+        #if(__DEBUG_TECPLOT_FILE__)
         std::cout<<"Zone initialised"<<std::endl;
         std::cout<<"Zone name: "<<(*zone).getName()<<std::endl;
+        #endif
         return;
     }
     if(line.find("STRANDID")!=std::string::npos){
         cursor=line.find("STRANDID")+9;
+        #if(__DEBUG_TECPLOT_FILE__)
         std::cout<<"Writing StrandID"<<std::endl;
+        #endif
         starget = std::stoll(line.substr(cursor, line.find(",", cursor)));
-        std::cout<<"StrandID: "<<starget<<std::endl;
         (*zone).setStrandID(starget);
+        #if(__DEBUG_TECPLOT_FILE__)
         std::cout<<"Zone StrandID: "<<(*zone).getStrandID()<<std::endl;
+        #endif
     }
     if(line.find("SOLUTIONTIME")!=std::string::npos){
-        cursor=line.find("SOLUTIONTIME")+14;
+        cursor=line.find("SOLUTIONTIME")+13;
         dtarget = std::stod(line.substr(cursor));
         (*zone).setSolTime(dtarget);
+        #if(__DEBUG_TECPLOT_FILE__)
         std::cout<<"Zone Solution Time: "<<(*zone).getSolTime()<<std::endl;
+        #endif
         return;
     }
     if(line.find("Nodes")!=std::string::npos){
         cursor=line.find("Nodes")+6;
         starget = std::stoll(line.substr(cursor, line.find(",", cursor)-cursor));
         (*zone).setNumberOfNodes(starget);
+        #if(__DEBUG_TECPLOT_FILE__)
         std::cout<<"Zone number of nodes: "<<(*zone).getNumberOfNodes()<<std::endl;
+        #endif
     }
     if(line.find("Elements")!=std::string::npos){
         cursor=line.find("Elements")+9;
         starget = std::stoll(line.substr(cursor, line.find(",", cursor)-cursor));
         (*zone).setNumberOfElements(starget);
+        #if(__DEBUG_TECPLOT_FILE__)
         std::cout<<"Zone number of Elements: "<<(*zone).getNumberOfElements()<<std::endl;
+        #endif
     }
 
     if(line.find("ZONETYPE")!=std::string::npos){
@@ -117,7 +132,9 @@ void tecplot_file::unpack_header(tecplot_zone* zone, std::string line){
         (*zone).setDataTypes(line);
         return;
     }
+    #if(__DEBUG_TECPLOT_FILE__)
     std::cout<<"Could not read line: \""<<line<<"\"\r\n";
+    #endif
 }
 
 void tecplot_file::loadFile(){
@@ -127,12 +144,15 @@ void tecplot_file::loadFile(){
     size_t cursor;
     char line_type;
     bool new_zone = false;
+    size_t offset=0;
 
     while(file){
         std::getline(file, line);
         line_type = this->decodeDataType(line);
         if(line_type==__TITLE__){
+            #if(__DEBUG_TECPLOT_FILE__)
             std::cout<<"Setting title"<<std::endl;
+            #endif
             cursor = line.find("= ");
             this->setTitle(line.substr(cursor+2));
             continue;
@@ -149,16 +169,22 @@ void tecplot_file::loadFile(){
         }
         if(line_type==__ZONE_HEADER__ || line_type==__DATA_TYPE__){
             this->unpack_header(&zone, line);
+            #if(__DEBUG_TECPLOT_FILE__)
             std::cout<<"Received new info on zone."<<std::endl;
+            #endif
             new_zone=true;
             continue;
         }
         if(line_type==__DATA__){
             //std::cout<<"New data line."<<std::endl;
             if(new_zone){
+                zone.setOffset(offset);
                 this->zone.push_back(zone);
                 zone = tecplot_zone();
                 new_zone = false;
+                #if(__DEBUG_TECPLOT_FILE__)
+                std::cout<<"Loading data."<<std::endl;
+                #endif
             }
             this->zone.back().addLine(line);
             continue;
@@ -168,9 +194,12 @@ void tecplot_file::loadFile(){
         }
         std::fflush(stdout);
     }
-    //save last read zone
+    #if(__DEBUG_TECPLOT_FILE__)
+    std::cout<<"Data and footer loaded"<<std::endl;
     std::cout<<"Size of the zone: "<<this->zone.back().size()<<std::endl;
-    this->zone.push_back(zone);
+    #endif
+    //save last read zone
+    //this->zone.push_back(zone);
 }
 
 void tecplot_file::addVariable(std::string variable_name){
@@ -180,7 +209,9 @@ void tecplot_file::addVariable(std::string variable_name){
         variable_name = variable_name.substr(1);
     if(variable_name.back()=='\"')
         variable_name.pop_back();
+    #if(__DEBUG_TECPLOT_FILE__)
     std::cout<<"Adding variable: "<<variable_name<<std::endl;
+    #endif
     this->variables.push_back(variable_name);
 }
 
@@ -218,7 +249,19 @@ std::vector<double> tecplot_file::getNode(
         if(columns.at(i)>this->variables.size())
             throw std::length_error("getNode: Column ID\
                 exceeds number of variables!");
-    return this->zone.at(zoneID).getNode(node, columns);
+    return this->zone.at(zoneID).getNode(node+zone.at(i).getOffset(), columns);
+}
+
+std::vector<double> tecplot_file::getNode(
+    size_t node
+){
+    size_t i = 0;
+    for(i=0; i<this->size(); i++){
+        if(this->zone.at(i).size()<node) continue;
+        return getNode(node);
+    }
+    throw std::length_error("getNode: Node ID exceeds total number\
+        of nodes in zones!");
 }
 
 size_t tecplot_file::firstZoneID(){
@@ -244,32 +287,38 @@ void tecplot_file::setCoordColumns(std::vector<size_t> columns){
     }
 }
 
-std::vector<double> tecplot_file::findNodeCoords(std::vector<double> coords, double epsilon=1e-6){
+std::vector<double> tecplot_file::findNodeCoords(std::vector<double> coords, double epsilon){
     size_t i=0;
     size_t node = 0;
     for(i=0; i<this->size(); i++){
         try{
             node = this->zone.at(i).findNode(coords, epsilon);
         }
-        catch(exception& exc){
-            std::coud<<"Node not found in zone: "<<i<<std::endl;
-            std::cout<<"Exception code:\n"<<exc<<std::endl;
+        catch(std::exception& exc){
+            #if(__DEBUG_TECPLOT_FILE__)
+            std::cout<<"Node not found in zone: "<<i<<std::endl;
+            std::cout<<"Exception code:\n"<<exc.what()<<std::endl;
+            #endif
             continue;
         }
         return this->zone.at(i).getNodeCoords(node);
     }
+    throw std::invalid_argument("findNodeCoords: No point found!");
 }
 
-size_t tecplot_file::findNode(std::vector<double> coords, double epsilon=1e-6){
+size_t tecplot_file::findNode(std::vector<double> coords, double epsilon){
     size_t i=0;
     for(i=0; i<this->size(); i++){
         try{
             return this->zone.at(i).findNode(coords, epsilon);
         }
-        catch(exception& exc){
-            std::coud<<"Node not found in zone: "<<i<<std::endl;
-            std::cout<<"Exception code:\n"<<exc<<std::endl;
+        catch(std::exception& exc){
+            #if(__DEBUG_TECPLOT_FILE__)
+            std::cout<<"Node not found in zone: "<<i<<std::endl;
+            std::cout<<"Exception code:\n\""<<exc.what()<<"\""<<std::endl;
+            #endif
             continue;
         }
     }
+    throw std::invalid_argument("findNodeCoords: No point found!");
 }

@@ -4,11 +4,12 @@ tecplot_zone::tecplot_zone(){
 
 }
 
-tecplot_zone::tecplot_zone(std::string name, size_t number_of_variables){
+tecplot_zone::tecplot_zone(std::string name, size_t number_of_variables, size_t offset){
     /*Defines new zone*/
     this->setName(name);
     this->number_of_variables = number_of_variables;
     this->zone_initialised = true;
+    this->offset = offset;
 }
 
 bool tecplot_zone::isInitialised(){
@@ -45,6 +46,14 @@ void tecplot_zone::setZoneType(std::string zone_type){
 void tecplot_zone::setDataPacking(std::string dp_type){
     if(dp_type.back()=='\n') dp_type.pop_back();
     this->datapacking = dp_type;
+}
+
+void tecplot_zone::setOffset(size_t offset){
+    this->offset = offset;
+}
+
+size_t tecplot_zone::getOffset(){
+    return this->offset;
 }
 
 size_t tecplot_zone::size(){
@@ -123,12 +132,12 @@ void tecplot_zone::addFooterLine(std::string line){
 }
 
 double tecplot_zone::getValue(size_t number_of_node, size_t number_of_variable){
-    if(number_of_node>this->size())
+    if(number_of_node-this->offset>this->size() || number_of_node<this->offset)
         throw std::length_error("getValue: Node ID\
-            exceeds number of available nodes in zone!");
+exceeds number of available nodes in zone!");
     if(number_of_variable>this->number_of_variables)
         throw std::length_error("getValue: Column ID\
-            exceeds number of variables!");
+exceeds number of variables!");
     return this->contents.at(number_of_node).at(number_of_variable);
 }
 
@@ -136,10 +145,10 @@ std::vector<double> tecplot_zone::getNode(size_t number_of_node){
     /* getNode(size_t, std::vector<size_t>)
        returns vector of node data
     */
-    if(number_of_node>this->size())
+    if(number_of_node-this->offset>this->size() || number_of_node<this->offset)
         throw std::length_error("getNode: Node ID\
-            exceeds number of available nodes in zone!");
-    return this->contents.at(number_of_node);
+exceeds number of available nodes in zone!");
+    return this->contents.at(number_of_node-this->offset);
 }
 
 std::vector<double> tecplot_zone::getNode(
@@ -154,10 +163,10 @@ std::vector<double> tecplot_zone::getNode(
     //add values from contents to result array
     for(size_t i=0; i<number_of_variable.size(); i++){
         if(number_of_variable.at(i)>this->number_of_variables)
-            throw std::length_error("getNode: Column ID exceeds\
-                number of variables!");
+            throw std::length_error("tecplot_zone::getNode: Column \
+ID exceeds number of variables!");
         res.push_back(this->getValue(
-            number_of_node,
+            number_of_node-this->offset,
             number_of_variable.at(i)
         ));
     }
@@ -188,8 +197,8 @@ void tecplot_zone::setCoordColumns(std::vector<size_t> columns){
     size_t i=0;
     for(i=0;i<columns.size(); i++)
         if(columns.at(i)>this->number_of_variables)
-            throw std::length_error("setCoordColumns: Column ID\
-                exceeds number of variables!");
+            throw std::length_error("tecplot_zone::setCoordColumns: \
+Column ID exceeds number of variables!");
     this->coord_columns = columns;
 }
 
@@ -202,16 +211,19 @@ double tecplot_zone::circ_dist(std::vector<double> p1, std::vector<double> p2){
 }
 
 std::vector<double> tecplot_zone::getNodeCoords(size_t node){
-    return this->getNode(node, this->coord_columns);
+    if(node-this->offset>this->size() || node<this->offset)
+        throw std::length_error("tecplot_zone::getNode: Node ID\
+exceeds number of available nodes in zone!");
+    return this->getNode(node-this->offset, this->coord_columns);
 }
 
 size_t tecplot_zone::findNode(std::vector<double> coords, double epsilon=1e-6){
     size_t nodeID = 0;
     //if coordinate columns were not set, throw an exception
     if(this->coord_columns.size()==0)
-        throw std::length_error("Coordinate columns not set! Please\
-            specify columns containing node coordinates before\
-            calling findPoint() function.");
+        throw std::length_error("tecplot_zone::findNode: Coordinate \
+columns not set! Please specify columns containing node coordinates \
+before calling findPoint() function.");
     //array of found nodes' ID numbers
     std::vector<size_t> nodes;
     //array of distances to the original node
@@ -220,7 +232,12 @@ size_t tecplot_zone::findNode(std::vector<double> coords, double epsilon=1e-6){
     double cnode_distance;
     for(nodeID=0; nodeID<this->size(); nodeID++){
         //initial check
-        if(fabs(coords.at(0)-this->contents.at(nodeID).at(coord_columns.at(0)))>epsilon) continue;
+        if(
+            fabs(
+                coords.at(0)-
+                this->contents.at(nodeID).at(coord_columns.at(0))
+            )>epsilon
+        ) continue;
         //calculate distance from original point
         cnode_distance = this->circ_dist(coords, this->getNodeCoords(nodeID));
         //if distance is smaller than epsilon, add to list of found points
@@ -230,11 +247,11 @@ size_t tecplot_zone::findNode(std::vector<double> coords, double epsilon=1e-6){
         }
     }
     //if there was no point found, throw exception
-    if(nodes.size()==0) throw std::invalid_argument("findNode: It seems\
-        that epsilon is too strict for given set of coordinates. No\
-        points were found.");
+    if(nodes.size()==0) throw std::invalid_argument("tecplot_zone::\
+findNode: It seems that epsilon is too strict for given set of \
+coordinates. No points were found.");
     //if there was only one point found, return it
-    if(nodes.size()==1) return nodes.at(0);
+    if(nodes.size()==1) return this->offset+nodes.at(0);
     //if there were multiple points found, return the closest one
     //(there is no point in making another if clause, as if runtime
     // was not caught by previous ifs, there must be more than one
@@ -247,5 +264,5 @@ size_t tecplot_zone::findNode(std::vector<double> coords, double epsilon=1e-6){
             min_id = nodeID;
         }
     }
-    return nodes.at(min_id);
+    return this->offset+nodes.at(min_id);
 }

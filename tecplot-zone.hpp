@@ -6,10 +6,12 @@
 #include <string>
 #include <cmath>
 
+#define __DEBUG_TECPLOT_ZONE__ true
+
 class tecplot_zone{
     public:
         tecplot_zone();
-        tecplot_zone(std::string name, size_t number_of_variables);
+        tecplot_zone(std::string name, size_t number_of_variables, size_t offset=0);
         void setName(std::string name);
         void setStrandID(size_t strandid);
         void setSolTime(double sol_time);
@@ -18,6 +20,8 @@ class tecplot_zone{
         void setZoneType(std::string zone_type);
         void setDataPacking(std::string dp_type);
         void setDataTypes(std::string dt_line);
+        void setOffset(size_t offset);
+        size_t getOffset();
         void addLine(std::string line);
         void addFooterLine(std::string line);
         std::string getName();
@@ -46,6 +50,7 @@ class tecplot_zone{
         std::vector<std::string> data_types;
         std::vector<std::vector<double>> contents;
         std::vector<std::vector<size_t>> footer;
+        size_t offset;
         size_t number_of_variables;
         std::vector<size_t> coord_columns;
 };
